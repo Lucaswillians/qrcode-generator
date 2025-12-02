@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gerador de QR Codes — Simples</title>
+  <style>
+    :root{--bg:#f7f7f8;--card:#fff;--accent:#111827}
+    *{box-sizing:border-box;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial}
+    body{margin:0;background:var(--bg);color:var(--accent);padding:28px}
+    .container{max-width:980px;margin:0 auto}
+    header{display:flex;align-items:center;gap:16px}
+    h1{font-size:20px;margin:0}
+    p.lead{margin:6px 0 18px;color:#444}
+    .card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 6px 18px rgba(20,20,20,0.06);}
+    label{display:block;font-size:13px;margin-bottom:8px}
+    textarea,input,select{width:100%;padding:10px;border-radius:8px;border:1px solid #e6e6e9;background:transparent}
+    .row{display:flex;gap:12px;margin-top:12px}
+    .col{flex:1}
+    button{background:#111827;color:white;border:0;padding:10px 12px;border-radius:10px;cursor:pointer}
+    .btn-ghost{background:transparent;border:1px solid #ddd;color:#111}
+    .presets{display:flex;gap:8px;margin-top:8px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-top:16px}
+    .qrcard{background:#fff;border-radius:10px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:8px;box-shadow:0 6px 12px rgba(0,0,0,0.04)}
+    .qrimg{width:180px;height:180px;display:block}
+    .small{font-size:13px;color:#333;word-break:break-all;text-align:center}
+    .controls{display:flex;gap:8px}
+    footer{margin-top:18px;color:#666;font-size:13px}
+    input[type=file]{display:none}
+    .flexrow{display:flex;gap:8px;align-items:center}
+    @media(max-width:600px){.row{flex-direction:column}.qrimg{width:150px;height:150px}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Gerador de QR Codes — Simples</h1>
+    </header>
+    <p class="lead">Cole um ou vários links (cada link em uma linha) e clique em "Gerar". Você pode baixar cada QR em PNG. Também há presets rápidos.</p>
+
+    <div class="card">
+      <label for="inputText">Links (um por linha)</label>
+      <textarea id="inputText" rows="6" placeholder="Cole URLs aqui...">https://github.com/Vanguard-System/Vanguard-Diagrams
+https://vanguardsystem.com.br/</textarea>
+
+      <div class="presets">
+        <button id="preset1" class="btn-ghost">Carregar 2 links (padrão)</button>
+        <button id="clear" class="btn-ghost">Limpar</button>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <div class="col">
+          <label for="size">Tamanho (px)</label>
+          <input id="size" type="number" value="512" min="128" max="2048">
+        </div>
+        <div class="col">
+          <label for="level">Nível de correção de erro</label>
+          <select id="level">
+            <option value="L">L - Baixa (7%)</option>
+            <option value="M" selected>M - Média (15%)</option>
+            <option value="Q">Q - Alta (25%)</option>
+            <option value="H">H - Máxima (30%)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-top:12px" class="flexrow">
+        <label for="logoFile" style="margin:0">Adicionar logo (opcional)</label>
+        <label for="logoFile" style="margin:0">
+          <button class="btn-ghost">Carregar logo</button>
+        </label>
+        <input id="logoFile" type="file" accept="image/*">
+        <div style="margin-left:auto" class="controls">
+          <button id="generate">Gerar</button>
+          <button id="downloadAll" class="btn-ghost">Baixar todos (.zip)</button>
+        </div>
+      </div>
+
+      <div id="output" class="grid" aria-live="polite"></div>
+    </div>
+
+    <footer>
+      Dica: para imprimir, use pelo menos 2cm x 2cm e mantenha contraste (preto no branco). Se não ler, aumente o tamanho e gere sem logo.
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+  <script>
+    // Elementos
+    const input = document.getElementById('inputText');
+    const generateBtn = document.getElementById('generate');
+    const output = document.getElementById('output');
+    const sizeInput = document.getElementById('size');
+    const levelInput = document.getElementById('level');
+    const logoFile = document.getElementById('logoFile');
+    const preset1 = document.getElementById('preset1');
+    const clearBtn = document.getElementById('clear');
+    const downloadAllBtn = document.getElementById('downloadAll');
+
+    let logoData = null;
+    logoFile.addEventListener('change', async (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if(!f) { logoData = null; return; }
+      logoData = await readFileAsDataURL(f);
+    });
+
+    preset1.addEventListener('click', ()=>{
+      input.value = 'https://github.com/Vanguard-System/Vanguard-Diagrams\nhttps://vanguardsystem.com.br/';
+    });
+    clearBtn.addEventListener('click', ()=>{ input.value = '' });
+
+    generateBtn.addEventListener('click', async ()=>{
+      const text = input.value.trim();
+      if(!text){ alert('Cole pelo menos 1 link'); return }
+      const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+      output.innerHTML = '';
+      const size = parseInt(sizeInput.value,10) || 512;
+      const level = levelInput.value || 'M';
+
+      for(const line of lines){
+        const wrapper = document.createElement('div');
+        wrapper.className = 'qrcard';
+
+        const canvas = document.createElement('canvas');
+        canvas.className = 'qrimg';
+        canvas.width = size;
+        canvas.height = size;
+
+        const caption = document.createElement('div');
+        caption.className = 'small';
+        caption.textContent = line;
+
+        const btns = document.createElement('div');
+        btns.className = 'controls';
+
+        const downloadBtn = document.createElement('button');
+        downloadBtn.textContent = 'Baixar PNG';
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'btn-ghost';
+        copyBtn.textContent = 'Copiar link';
+
+        btns.appendChild(downloadBtn);
+        btns.appendChild(copyBtn);
+
+        wrapper.appendChild(canvas);
+        wrapper.appendChild(caption);
+        wrapper.appendChild(btns);
+        output.appendChild(wrapper);
+
+        // gerar QR no canvas
+        try{
+          await QRCode.toCanvas(canvas, line, {
+            width: size,
+            margin: 1,
+            errorCorrectionLevel: level
+          });
+
+          // se tiver logo, desenhar no centro
+          if(logoData){
+            await drawLogoOnCanvas(canvas, logoData);
+          }
+
+          downloadBtn.addEventListener('click', ()=>{
+            const a = document.createElement('a');
+            a.href = canvas.toDataURL('image/png');
+            a.download = makeFilename(line) + '.png';
+            a.click();
+          });
+
+          copyBtn.addEventListener('click', async ()=>{
+            try{
+              await navigator.clipboard.writeText(line);
+              copyBtn.textContent = 'Copiado!';
+              setTimeout(()=>copyBtn.textContent = 'Copiar link',1200);
+            }catch(e){ alert('Erro ao copiar: '+e.message) }
+          });
+
+        }catch(err){
+          caption.textContent = 'Erro ao gerar: ' + err;
+        }
+      }
+    });
+
+    downloadAllBtn.addEventListener('click', async ()=>{
+      // cria zip de todos os canvases usando JSZip via CDN (carrega dinamicamente)
+      const canvases = Array.from(output.querySelectorAll('canvas'));
+      if(!canvases.length){ alert('Gere os QR Codes primeiro'); return }
+
+      // carregar jszip dinamicamente
+      if(!window.JSZip){
+        await loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+      }
+      const zip = new JSZip();
+      canvases.forEach((c, i) => {
+        const data = c.toDataURL('image/png');
+        const bin = dataURLToUint8Array(data);
+        zip.file(`qrcode-${i+1}.png`, bin);
+      });
+      const content = await zip.generateAsync({type:'blob'});
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'qrcodes.zip'; a.click();
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+    });
+
+    // helpers
+    function readFileAsDataURL(file){
+      return new Promise((res, rej)=>{
+        const r = new FileReader();
+        r.onload = ()=>res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      })
+    }
+
+    async function drawLogoOnCanvas(canvas, logoDataUrl){
+      return new Promise((resolve)=>{
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = ()=>{
+          // tamanho do logo: 20% do QR
+          const logoSize = Math.floor(canvas.width * 0.20);
+          const x = Math.floor((canvas.width - logoSize)/2);
+          const y = Math.floor((canvas.height - logoSize)/2);
+          // desenha um fundo branco arredondado para garantir leitura
+          const radius = 8;
+          ctx.fillStyle = 'white';
+          roundRect(ctx, x-6, y-6, logoSize+12, logoSize+12, radius);
+          ctx.fill();
+          ctx.drawImage(img, x, y, logoSize, logoSize);
+          resolve();
+        }
+        img.onerror = ()=>resolve();
+        img.src = logoDataUrl;
+      });
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function makeFilename(url){
+      try{
+        const u = new URL(url);
+        const name = (u.hostname + u.pathname).replace(/[^a-z0-9\.\-]/gi,'-');
+        return name || 'qrcode';
+      }catch(e){
+        return url.slice(0,40).replace(/[^a-z0-9\.\-]/gi,'-');
+      }
+    }
+
+    function dataURLToUint8Array(dataURL){
+      const base64 = dataURL.split(',')[1];
+      const raw = atob(base64);
+      const arr = new Uint8Array(raw.length);
+      for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+      return arr;
+    }
+
+    function loadScript(src){
+      return new Promise((res,rej)=>{
+        const s = document.createElement('script');
+        s.src = src; s.onload = res; s.onerror=rej; document.head.appendChild(s);
+      })
+    }
+
+    // gerar automaticamente os links padrão ao abrir
+    window.addEventListener('load', ()=>document.getElementById('preset1').click());
+  </script>
+</body>
+</html>
